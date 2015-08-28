@@ -62,7 +62,7 @@ def convert_mth_strings ( mth_string ):
 # pull down the content from the webpage
 session = requests.Session()
 pages = session.get(url, headers = headers, allow_redirects=True, verify = False)
-soup = BeautifulSoup(pages.text)
+soup = BeautifulSoup(pages.text, 'lxml')
 dates = soup.find('option', attrs={'selected':'True'}).text
 month = soup.find('select', attrs={'id':'lbxPeriod'}).find('option', attrs = {'selected':'True'}).text
 if len(month) == 1:
@@ -72,7 +72,7 @@ csvYr = dates
 iframe  = soup.find('span', 'ThemeTextSmall').iframe['data-hiddensource']
 url_csv = 'http://www.torbay.gov.uk/Public_Reports/' + iframe
 pages_csv = session.get(url_csv, headers = headers, allow_redirects=True, verify = False)
-soup_csv = BeautifulSoup(pages_csv.text)
+soup_csv = BeautifulSoup(pages_csv.text, 'lxml')
 keys = soup_csv.find('input', attrs = {'name':'rdCSRFKey'})['value']
 url_link = soup_csv.find('a', attrs={'id':'actExportCSV'})['href'].split("javascript:SubmitForm('")[-1].split("','_blank'")[0]
 
