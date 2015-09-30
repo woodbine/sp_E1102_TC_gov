@@ -1,34 +1,42 @@
 # -*- coding: utf-8 -*-
+
+#### IMPORTS 1.0
+
 import os
 import re
-import requests
 import scraperwiki
 import urllib2
 from datetime import datetime
 from bs4 import BeautifulSoup
+import requests
 from dateutil.parser import parse
 
-# Set up variables
-entity_id = "E1102_TC_gov"
-url = "http://www.torbay.gov.uk/Public_Reports/rdPage.aspx?rdReport=AP_500_Report"
-errors = 0
-headers = {'User-Agent': 'Mozilla/5.0'}
+#### FUNCTIONS 1.0
 
-# Set up functions
 def validateFilename(filename):
-    filenameregex = '^[a-zA-Z0-9]+_[a-zA-Z0-9]+_[a-zA-Z0-9]+_[0-9][0-9][0-9][0-9]_[0-9][0-9]$'
-    dateregex = '[0-9][0-9][0-9][0-9]_[0-9][0-9]'
+    filenameregex = '^[a-zA-Z0-9]+_[a-zA-Z0-9]+_[a-zA-Z0-9]+_[0-9][0-9][0-9][0-9]_[0-9QY][0-9]$'
+    dateregex = '[0-9][0-9][0-9][0-9]_[0-9QY][0-9]'
     validName = (re.search(filenameregex, filename) != None)
     found = re.search(dateregex, filename)
     if not found:
         return False
     date = found.group(0)
-    year, month = int(date[:4]), int(date[5:7])
     now = datetime.now()
-    validYear = (2000 <= year <= now.year)
-    validMonth = (1 <= month <= 12)
+    year, month = date[:4], date[5:7]
+    validYear = (2000 <= int(year) <= now.year)
+    if 'Q' in date:
+        validMonth = (month in ['Q0', 'Q1', 'Q2', 'Q3', 'Q4'])
+    elif 'Y' in date:
+        validMonth = (month in ['Y1'])
+    else:
+        try:
+            validMonth = datetime.strptime(date, "%Y_%m") < now
+        except:
+            return False
     if all([validName, validYear, validMonth]):
         return True
+
+
 def validateURL(url):
     try:
         r = requests.get(url, allow_redirects=True, timeout=20)
@@ -38,7 +46,7 @@ def validateURL(url):
             count += 1
             r = requests.get(url, allow_redirects=True, timeout=20)
         sourceFilename = r.headers.get('Content-Disposition')
-        
+
         if sourceFilename:
             ext = os.path.splitext(sourceFilename)[1].replace('"', '').replace(';', '').replace(' ', '')
         if r.headers.get('Content-Type') == 'application/octet-stream':
@@ -49,20 +57,52 @@ def validateURL(url):
         validFiletype = ext in ['.csv', '.xls', '.xlsx']
         return validURL, validFiletype
     except:
-        raise
+        print ("Error validating URL.")
+        return False, False
+
+def validate(filename, file_url):
+    validFilename = validateFilename(filename)
+    validURL, validFiletype = validateURL(file_url)
+    if not validFilename:
+        print filename, "*Error: Invalid filename*"
+        print file_url
+        return False
+    if not validURL:
+        print filename, "*Error: Invalid URL*"
+        print file_url
+        return False
+    if not validFiletype:
+        print filename, "*Error: Invalid filetype*"
+        print file_url
+        return False
+    return True
+
+
 def convert_mth_strings ( mth_string ):
-
     month_numbers = {'JAN': '01', 'FEB': '02', 'MAR':'03', 'APR':'04', 'MAY':'05', 'JUN':'06', 'JUL':'07', 'AUG':'08', 'SEP':'09','OCT':'10','NOV':'11','DEC':'12' }
-    #loop through the months in our dictionary
     for k, v in month_numbers.items():
-#then replace the word with the number
-
         mth_string = mth_string.replace(k, v)
     return mth_string
-# pull down the content from the webpage
+
+
+#### VARIABLES 1.0
+
+entity_id = "E1102_TC_gov"
+url = "http://www.torbay.gov.uk/Public_Reports/rdPage.aspx?rdReport=AP_500_Report"
+errors = 0
+headers = {'User-Agent': 'Mozilla/5.0'}
+data = []
+
+#### READ HTML 1.0
+
 session = requests.Session()
 pages = session.get(url, headers = headers, allow_redirects=True, verify = False)
 soup = BeautifulSoup(pages.text, 'lxml')
+
+
+#### SCRAPE DATA
+
+
 dates = soup.find('option', attrs={'selected':'True'}).text
 month = soup.find('select', attrs={'id':'lbxPeriod'}).find('option', attrs = {'selected':'True'}).text
 if len(month) == 1:
@@ -76,7 +116,7 @@ soup_csv = BeautifulSoup(pages_csv.text, 'lxml')
 keys = soup_csv.find('input', attrs = {'name':'rdCSRFKey'})['value']
 url_link = soup_csv.find('a', attrs={'id':'actExportCSV'})['href'].split("javascript:SubmitForm('")[-1].split("','_blank'")[0]
 
-data = {'rdCSRFKey':'{}'.format(keys),
+datadict = {'rdCSRFKey':'{}'.format(keys),
 'rdAgCurrentOpenPanel':''	,
 'rdAllowCrosstabBasedOnCurrentColumns':'True',
 'rdAgCalcName'	: '',
@@ -182,31 +222,32 @@ data = {'rdCSRFKey':'{}'.format(keys),
 'rdShowElementHistory'	:'',
 'rdRnd':	'17475'}
 url = 'http://www.torbay.gov.uk/Public_Reports/'+url_link
-p = session.post(url, headers = headers, data =data,  allow_redirects=True, verify =False)
+p = session.post(url, headers = headers, data =datadict,  allow_redirects=True, verify =False)
 
 
 csvMth = convert_mth_strings(csvMth.upper())
-filename = entity_id + "_" + csvYr + "_" + csvMth
-todays_date = str(datetime.now())
-file_url = url
-validFilename = validateFilename(filename)
-validURL, validFiletype = validateURL(file_url)
-if not validFilename:
-    print filename, "*Error: Invalid filename*"
-    print file_url
-    errors += 1
+data.append([csvYr, csvMth, url])
 
-if not validURL:
-    print filename, "*Error: Invalid URL*"
-    print file_url
-    errors += 1
 
-if not validFiletype:
-    print filename, "*Error: Invalid filetype*"
-    print file_url
-    errors += 1
+#### STORE DATA 1.0
 
-scraperwiki.sqlite.save(unique_keys=['l'], data={"l": file_url, "f": filename, "d": todays_date })
-print filename
+for row in data:
+    csvYr, csvMth, url = row
+    filename = entity_id + "_" + csvYr + "_" + csvMth
+    todays_date = str(datetime.now())
+    file_url = url.strip()
+
+    valid = validate(filename, file_url)
+
+    if valid == True:
+        scraperwiki.sqlite.save(unique_keys=['l'], data={"l": file_url, "f": filename, "d": todays_date })
+        print filename
+    else:
+        errors += 1
+
 if errors > 0:
-   raise Exception("%d errors occurred during scrape." % errors)
+    raise Exception("%d errors occurred during scrape." % errors)
+
+
+#### EOF
+
