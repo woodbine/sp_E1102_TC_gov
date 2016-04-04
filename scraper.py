@@ -10,7 +10,9 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 
-#### FUNCTIONS 1.0
+#### FUNCTIONS 1.2
+
+import requests  # import requests to make sessions and post requests
 
 def validateFilename(filename):
     filenameregex = '^[a-zA-Z0-9]+_[a-zA-Z0-9]+_[a-zA-Z0-9]+_[0-9][0-9][0-9][0-9]_[0-9QY][0-9]$'
@@ -36,31 +38,32 @@ def validateFilename(filename):
         return True
 
 
-def validateURL(url):
+def validateURL(url, session, datadict):
     try:
-        r = urllib2.urlopen(url)
+        r = session.post(url, data=datadict, allow_redirects=True, timeout=120)
         count = 1
-        while r.getcode() == 500 and count < 4:
+        while r.status_code == 500 and count < 4:
             print ("Attempt {0} - Status code: {1}. Retrying.".format(count, r.status_code))
             count += 1
-            r = urllib2.urlopen(url)
+            r = session.post(url, data = datadict, allow_redirects=True, timeout=120)
+
         sourceFilename = r.headers.get('Content-Disposition')
         if sourceFilename:
             ext = os.path.splitext(sourceFilename)[1].replace('"', '').replace(';', '').replace(' ', '')
-        if r.headers.get('Content-Type') == 'application/octet-stream':
-            ext = '.csv'
         else:
             ext = os.path.splitext(url)[1]
-        validURL = r.getcode() == 200
+            ext = '.csv'
+        validURL = r.status_code == 200
         validFiletype = ext.lower() in ['.csv', '.xls', '.xlsx']
         return validURL, validFiletype
     except:
         print ("Error validating URL.")
         return False, False
 
-def validate(filename, file_url):
+
+def validate(filename, file_url, session, datadict):
     validFilename = validateFilename(filename)
-    validURL, validFiletype = validateURL(file_url)
+    validURL, validFiletype = validateURL(file_url, session, datadict)
     if not validFilename:
         print filename, "*Error: Invalid filename*"
         print file_url
@@ -93,7 +96,7 @@ headers = {'User-Agent': 'Mozilla/5.0'}
 data = []
 
 #### READ HTML 1.2
-import requests  # import requests to make sessions
+
 
 session = requests.Session()
 pages = session.get(url, headers = headers, allow_redirects=True, verify = False)
@@ -102,149 +105,118 @@ soup = BeautifulSoup(pages.text, 'lxml')
 
 #### SCRAPE DATA
 
-dates = soup.find('select', id='lbxYear').find_all('option')
-months = soup.find('select', attrs={'id':'lbxPeriod'}).find_all('option')
+dates = soup.find('select', id='lbxPERIOD').find_all('option')
+rdcrf = soup.find('input', id='rdCSRFKey1')['value']
 for date in dates:
     date = date['value']
-    for month in range(1, 13):
-        if len(str(month)) == 1:
-            csvMth = '0'+ str(month)
-        else:
-            csvMth = str(month)
-        csvYr = date
-        session_date = session_url.format(month, date).split('=Form&')[-1].split('&rdCSRFKey')[0]
-        pages_session = session.post(session_url.format(month, date), headers = headers, allow_redirects=True, verify = False)
-        soup_session = BeautifulSoup(pages_session.text, 'lxml')
-        try:
-            iframe  = soup_session.find('span', 'ThemeTextSmall').iframe['data-hiddensource']
-            url_csv = 'http://www.torbay.gov.uk/Public_Reports/' + iframe
-            pages_csv = session.get(url_csv, headers = headers, allow_redirects=True, verify = False)
-            soup_csv = BeautifulSoup(pages_csv.text, 'lxml')
-            keys = soup_csv.find('input', attrs = {'name':'rdCSRFKey'})['value']
-            url_link = soup_csv.find('a', attrs={'id':'actExportCSV'})['href'].split("javascript:SubmitForm('")[-1].split("','_blank'")[0]
-
-            datadict = {'rdCSRFKey':'{}'.format(keys),
-            'rdAgCurrentOpenPanel':''	,
-            'rdAllowCrosstabBasedOnCurrentColumns':'True',
-            'rdAgCalcName'	: '',
-            'rdAgCalcDataColumns'	:'',
-            'rdAgCalcFormula':''	,
-            'rdAgCalcDataTypes':'Number',
-            'rdAgCalcFormats':''	,
-            'rdAgFilterColumn':''	,
-            'rdAgFilterOperator':	'=',
-            'rdAgPickDistinctColumns':',BODY,ORGANISATIONALUNIT,SERVICELABEL,SERVICEDIVISION,SERVICEDIVISONCODE,EXPENDITURECATEGORY,SERCOPDETAILEDEXPENDITURETYPE,SERCOPDETAILEDEXPENDITURECODE,',
-            'rdAgPickDateColumns':	',TRANSACTIONDATE-NoCalendar,',
-            'rdAgCurrentFilterValue':''	,
-            'rdAgCurrentDateType'	: '',
-            'rdAgSlidingTimeStartDateFilterOpearator':'Specific Date',
-            'rdAgSlidingTimeStartDateFilterOpearatorOptions':'Today',
-            'rdAgFilterStartDate'	:'',
-            'rdAgFilterStartDate_Hidden':''	,
-            'rdReformatDaterdAgFilterStartDate':'yyyy/MM/dd',
-            'rdDateFormatrdAgFilterStartDate':'M/d/yyyy',
-            'rdAgFilterStartDateTextbox':''	,
-            'rdAgFilterStartDateTextbox_Hidden':''	,
-            'rdReformatDaterdAgFilterStartDateTextbox':'yyyy/MM/dd',
-            'rdDateFormatrdAgFilterStartDateTextbox':'M/d/yyyy',
-            'rdAgSlidingTimeEndDateFilterOpearator':'Specific Date',
-            'rdAgSlidingTimeEndDateFilterOpearatorOptions':'Today',
-            'rdAgFilterEndDate':''	,
-            'rdAgFilterEndDate_Hidden':''	,
-            'rdReformatDaterdAgFilterEndDate':'yyyy/MM/dd',
-            'rdDateFormatrdAgFilterEndDate':'M/d/yyyy',
-            'rdAgFilterEndDateTextbox':'',
-            'rdAgFilterEndDateTextbox_Hidden':''	,
-            'rdReformatDaterdAgFilterEndDateTextbox':'yyyy/MM/dd',
-            'rdDateFormatrdAgFilterEndDateTextbox':'M/d/yyyy',
-            'rdAgFilterValue':'',
-            'rdAgCurrentOpenTablePanel':'Layout',
-            'rdAgId':'ag500ExpenditureReportVersion2',
-            'rdAgReportId':'AP_500_AnalGrid_V2',
-            'rdAgDraggablePanels':'True',
-            'rdAgPanelOrder':'rowTable',
-            'rdAgLayoutColumnName_Row1':'Year',
-            'rdAgLayoutColumnName_Row2':'Month',
-            'rdAgColVisible_Row3':'True',
-            'rdAgLayoutColumnName_Row3':'Organisation',
-            'rdAgColVisible_Row4':'True',
-            'rdAgLayoutColumnName_Row4':'OrganisationCode',
-            'rdAgColVisible_Row5':'True',
-            'rdAgLayoutColumnName_Row5':'Department',
-            'rdAgColVisible_Row6':'True',
-            'rdAgLayoutColumnName_Row6':'ServiceCategoryLabel',
-            'rdAgColVisible_Row7':	'True',
-            'rdAgLayoutColumnName_Row7':	'ServiceDivisionLabel',
-            'rdAgColVisible_Row8':	'True',
-            'rdAgLayoutColumnName_Row8':	'ServiceDivisionCode',
-            'rdAgColVisible_Row9':	'True',
-            'rdAgLayoutColumnName_Row9':	'Supplier(Beneficiary)',
-            'rdAgColVisible_Row10':	'True',
-            'rdAgLayoutColumnName_Row10':	'Supplier(Beneficiary)ID',
-            'rdAgColVisible_Row11':	'True',
-            'rdAgLayoutColumnName_Row11':	'Supplier(Beneficiary)Type',
-            'rdAgColVisible_Row12':	'True',
-            'rdAgLayoutColumnName_Row12':	'PurposeofExpenditure(Narrative)',
-            'rdAgColVisible_Row13':	'True',
-            'rdAgLayoutColumnName_Row13':	'PurposeofExpenditure(ExpenditureCategory)',
-            'rdAgColVisible_Row14':	'True',
-            'rdAgLayoutColumnName_Row14':	'CIPFADetailedExpenditureType',
-            'rdAgColVisible_Row15':	'True',
-            'rdAgLayoutColumnName_Row15':	'CIPFAExpenditureCode',
-            'rdAgColVisible_Row16':	'True',
-            'rdAgLayoutColumnName_Row16':	'Procurement(MerchantCategory)',
-            'rdAgColVisible_Row17':	'True',
-            'rdAgLayoutColumnName_Row17':	'Procurement(MerchantCategoryCode)',
-            'rdAgColVisible_Row18':	'True',
-            'rdAgLayoutColumnName_Row18':	'Date',
-            'rdAgColVisible_Row19':	'True',
-            'rdAgLayoutColumnName_Row19':	'TransactionNumber',
-            'rdAgColVisible_Row20':	'True',
-            'rdAgLayoutColumnName_Row20':	'NetAmount',
-            'rdAgColVisible_Row21':	'True',
-            'rdAgLayoutColumnName_Row21':	'IrrecoverableVAT',
-            'rdAgColVisible_Row22':	'True',
-            'rdAgLayoutColumnName_Row22':	'CardTransaction',
-            'rdAgColVisible_Row23':	'True',
-            'rdAgLayoutColumnName_Row23':	'ContractID',
-            'rdAgColVisible_Row24':	'True',
-            'rdAgLayoutColumnName_Row24':	'TimePeriodforGrant',
-            'rdAgColVisible_Row25':	'True',
-            'rdAgLayoutColumnName_Row25':	'BeneficiaryRegistrationNumber',
-            'rdAgColVisible_Row26':	'True',
-            'rdAgLayoutColumnName_Row26':	'PurposeofGrant',
-            'rdAgGroupColumn':	'',
-            'rdAgPickDateColumnsForGrouping':	',TRANSACTIONDATE,',
-            'rdAgDateGroupBy':''	,
-            'rdAgAggrColumn':'',
-            'rdAgAggrFunction':	'SUM',
-            'rdAgAggrRowPosition':'RowPositionTop',
-            'rdAgOrderColumn':''	,
-            'rdAgOrderDirection':	'Ascending',
-            'rdAgPaging':	'ShowPaging',
-            'rdAgRowsPerPage':	'20',
-            'dtAnalysisGrid-PageNr':'1',
-            'rdFix4Firefox'	:'',
-            'rdAgCurrentOpenTablePanel':''	,
-            'rdShowElementHistory'	:'',
-            'rdRnd':	'17475'}
-            url = 'http://www.torbay.gov.uk/Public_Reports/'+url_link+'&'+session_date
-            p = session.post(url, headers = headers, data =datadict,  allow_redirects=True, verify =False)
-
-            csvMth = convert_mth_strings(csvMth.upper())
-            data.append([csvYr, csvMth, url])
-        except: pass
+    if 'None' not in date:
+        url = 'http://www.torbay.gov.uk/Public_Reports/rdPage.aspx?rdReport=AP_500_AnalGrid_V1&rdAgRefreshData=True&lbxPERIOD={}&rdSubReport=True&rdResizeFrame=True'.format(date)
+        dates_pages = session.get(url, headers = headers, allow_redirects=True, verify = False)
+        dates_soup = BeautifulSoup(dates_pages.text, 'lxml')
+        csv_url = 'http://www.torbay.gov.uk/Public_Reports/'+dates_soup.find('a', id='lblExportCsv_rdPopupOptionItem')['href'].split("javascript:SubmitForm('")[-1].split("','_blank'")[0].replace('%26', '&').replace('%3d', '=')
+        datadict = {
+            'rdCSRFKey': '{}'.format(rdcrf),
+'rdAgDataColumnDetails':	',DATEYEAR;Year:Text,DATEMONTH;Month:Text,BODYNAME;Organisation:Text,BODY;Organisation Code:Text,ORGANISATIONALUNIT;Department:Text,SERVICELABEL;Service Category Label:Text,SERVICEDIVISION;Service Division Label:Text,SERVICEDIVISONCODE;Service Division Code:Text,SUPPLIERNAME;Supplier (Beneficiary):Text,SUPPLIERID;Supplier (Beneficiary) ID:Text,SUPPLIERTYPE;Supplier (Beneficiary) Type:Text,NARRATIVE;Purpose of Expenditure (Narrative):Text,EXPENDITURECATEGORY;Purpose of Expenditure (Expenditure Category):Text,SERCOPDETAILEDEXPENDITURETYPE;CIPFA Detailed Expenditure Type:Text,SERCOPDETAILEDEXPENDITURECODE;CIPFA Expenditure Code:Text,PROCATNARR;Procurement (Merchant Category):Text,PROCATCODE;Procurement (Merchant Category Code):Text,TRANSACTIONDATE;Date:Date,TRANSACTIONNUMBER;Transaction Number:Text,AMOUNT;Net Amount:Number,VATNOTRCVBL;Irrecoverable VAT:Number,GPCCARD;Card Transaction:Text,CONTRACTID;Contract ID:Text,GRANTPERIOD;Time Period for Grant:Text,GRANTREGNO;Beneficiary Registration Number:Text,GRANTPURPOSE;Purpose of Grant:Text',
+'rdAgCurrentOpenPanel': '',
+'rdAllowCrosstabBasedOnCurrentColumns':	'True',
+'rdAgCalcName': '',
+'rdAgCalcDataColumns': '',
+'rdAgCalcFormula': '',
+'rdAgCalcDataTypes':	'Number',
+'rdAgCalcFormats': '',
+'rdAgFilterColumn': '',
+'rdAgFilterOperator':	'=',
+'rdAgPickDistinctColumns':	',BODY,ORGANISATIONALUNIT,SERVICELABEL,SERVICEDIVISION,SERVICEDIVISONCODE,EXPENDITURECATEGORY,SERCOPDETAILEDEXPENDITURETYPE,SERCOPDETAILEDEXPENDITURECODE,',
+'rdAgPickDateColumns':	',TRANSACTIONDATE,',
+'rdAgCurrentFilterValue': '',
+'rdAgCurrentDateType': '',
+'rdAgColumnFormats':	'DATEYEAR:|DATEMONTH:|BODYNAME:|BODY:|ORGANISATIONALUNIT:|SERVICELABEL:|SERVICEDIVISION:|SERVICEDIVISONCODE:|SUPPLIERNAME:|SUPPLIERID:|SUPPLIERTYPE:|NARRATIVE:|EXPENDITURECATEGORY:|SERCOPDETAILEDEXPENDITURETYPE:|SERCOPDETAILEDEXPENDITURECODE:|PROCATNARR:|PROCATCODE:|TRANSACTIONDATE:Short Date|TRANSACTIONNUMBER:|AMOUNT:###,###,##0.00|VATNOTRCVBL:###,###,##0.00|GPCCARD:|CONTRACTID:|GRANTPERIOD:|GRANTREGNO:|GRANTPURPOSE:|',
+'rdAgColumnDataTypes':	'DATEYEAR:Text|DATEMONTH:Text|BODYNAME:Text|BODY:Text|ORGANISATIONALUNIT:Text|SERVICELABEL:Text|SERVICEDIVISION:Text|SERVICEDIVISONCODE:Text|SUPPLIERNAME:Text|SUPPLIERID:Text|SUPPLIERTYPE:Text|NARRATIVE:Text|EXPENDITURECATEGORY:Text|SERCOPDETAILEDEXPENDITURETYPE:Text|SERCOPDETAILEDEXPENDITURECODE:Text|PROCATNARR:Text|PROCATCODE:Text|TRANSACTIONDATE:Date|TRANSACTIONNUMBER:Text|AMOUNT:Number|VATNOTRCVBL:Number|GPCCARD:Text|CONTRACTID:Text|GRANTPERIOD:Text|GRANTREGNO:Text|GRANTPURPOSE:Text|',
+'rdAgSlidingTimeStartDateFilterOperator':	'Specific Date',
+'rdAgSlidingTimeStartDateFilterOperatorOptions':	'Today',
+'rdAgFilterStartDate': '',
+'rdAgFilterStartDate_Hidden': '',
+'rdReformatDaterdAgFilterStartDate':	'yyyy-MM-dd',
+'rdDateFormatrdAgFilterStartDate':	'M/d/yyyy',
+'rdAgFilterStartTime': '',
+'rdAgFilterStartTime_Hidden':	'1:39 PM',
+'rdReformatTimerdAgFilterStartTime':	'HH:mm:ss',
+'rdFormatTimerdAgFilterStartTime':	't',
+'rdAgSlidingTimeEndDateFilterOperator':	'Specific Date',
+'rdAgSlidingTimeEndDateFilterOperatorOptions':	'Today',
+'rdAgFilterEndDate': '',
+'rdAgFilterEndDate_Hidden': '',
+'rdReformatDaterdAgFilterEndDate':	'yyyy-MM-dd',
+'rdDateFormatrdAgFilterEndDate':	'M/d/yyyy',
+'rdAgFilterEndTime':	'',
+'rdAgFilterEndTime_Hidden':	'1:39 PM',
+'rdReformatTimerdAgFilterEndTime':	'HH:mm:ss',
+'rdFormatTimerdAgFilterEndTime':	't',
+'rdAgFilterValue': '',
+'rdAgCurrentOpenTablePanel':	'Layout',
+'rdAgId':	'ag500ExpenditureReportVersion2',
+'rdAgReportId':	'AP_500_AnalGrid_V2',
+'rdAgDraggablePanels':	'True',
+'rdAgPanelOrder':	'rowTable',
+'iclLayout_rdExpandedCollapsedHistory': '',
+'iclLayout':	'Organisation',
+'iclLayout':	'OrganisationCode',
+'iclLayout':	'Department',
+'iclLayout':	'ServiceCategoryLabel',
+'iclLayout':	'ServiceDivisionLabel',
+'iclLayout':	'ServiceDivisionCode',
+'iclLayout':	'Supplier(Beneficiary)',
+'iclLayout':	'Supplier(Beneficiary)ID',
+'iclLayout':	'Supplier(Beneficiary)Type',
+'iclLayout':	'PurposeofExpenditure(Narrative)',
+'iclLayout':	'PurposeofExpenditure(ExpenditureCategory)',
+'iclLayout':	'CIPFADetailedExpenditureType',
+'iclLayout':	'CIPFAExpenditureCode',
+'iclLayout':	'Procurement(MerchantCategory)',
+'iclLayout':	'Procurement(MerchantCategoryCode)',
+'iclLayout':	'Date',
+'iclLayout':	'TransactionNumber',
+'iclLayout':	'NetAmount',
+'iclLayout':	'IrrecoverableVAT',
+'iclLayout':	'CardTransaction',
+'iclLayout':	'ContractID',
+'iclLayout':	'TimePeriodforGrant',
+'iclLayout':	'BeneficiaryRegistrationNumber',
+'iclLayout':	'PurposeofGrant',
+'rdAgGroupColumn':	'',
+'rdAgPickDateColumnsForGrouping':	',TRANSACTIONDATE,',
+'rdAgDateGroupBy':	'',
+'rdAgAggrColumn':	'',
+'rdAgAggrFunction':	'SUM',
+'rdAgAggrRowPosition':	'RowPositionTop',
+'rdAgOrderColumn':	'',
+'rdAgOrderDirection':	'Ascending',
+'rdAgPaging':	'ShowPaging',
+'rdAgRowsPerPage':	'20',
+'dtAnalysisGrid-PageNr':	'1',
+'rdFix4Firefox':	'',
+'rdAgCurrentOpenTablePanel':	'',
+'rdShowElementHistory':	'',
+'rdAgFilterValueBoolean':	'False',
+'rdAgExcludeDetailRowsCheckbox':	'',
+'rdRnd':	'60529',
+'rdRnd':	'33072'
+        }
+        csvYr = date[:4]
+        csvMth = date[-2:]
+        csvMth = convert_mth_strings(csvMth.upper())
+        data.append([csvYr, csvMth, csv_url, session, datadict])
 
 
 #### STORE DATA 1.0
 
 for row in data:
-    csvYr, csvMth, url = row
+    csvYr, csvMth, url, session, datadict = row
     filename = entity_id + "_" + csvYr + "_" + csvMth
     todays_date = str(datetime.now())
     file_url = url.strip()
 
-    valid = validate(filename, file_url)
+    valid = validate(filename, file_url, session, datadict)
 
     if valid == True:
         scraperwiki.sqlite.save(unique_keys=['l'], data={"l": file_url, "f": filename, "d": todays_date })
